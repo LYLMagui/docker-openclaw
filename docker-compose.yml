@@ -9,7 +9,7 @@ services:
       context: ./openclaw
       dockerfile: Dockerfile
       args:
-        # 构建期间的代理设置（视情况使用）
+        # 构建期间的代理设置（视情况添加）
         HTTP_PROXY: ${HTTP_PROXY:-http://mihomo:7890}
         HTTPS_PROXY: ${HTTPS_PROXY:-http://mihomo:7890}
         # 不走代理的地址列表。
@@ -32,14 +32,6 @@ services:
       HOME: /root
       # 终端类型，仅影响彩色输出、交互行为和某些 CLI 的展示效果。
       TERM: xterm-256color
-      # 运行期间的代理配置
-      HTTP_PROXY: ${HTTP_PROXY:-http://mihomo:7890}
-      HTTPS_PROXY: ${HTTPS_PROXY:-http://mihomo:7890}
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
-      # --dns-result-order=ipv4first：在云服务器环境优先用 IPv4，减少 IPv6 解析后连接超时的问题。
-      # --use-env-proxy：明确要求 Node 内建 fetch / undici 读取 HTTP_PROXY / HTTPS_PROXY / NO_PROXY
-      # 没有这一项时，很多“明明配置了代理但 fetch 不走代理”的问题都会出现。 
-      NODE_OPTIONS: --dns-result-order=ipv4first --use-env-proxy
       # Gateway 鉴权令牌。
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
       # 允许非 loopback 私网地址使用明文 ws:// 的开关。
@@ -93,18 +85,6 @@ services:
       retries: 5
       start_period: 20s
 
-  # ---------------------------------------------------------------------------
-  # openclaw-cli
-  # ---------------------------------------------------------------------------
-  # 这是交互式/一次性 CLI 容器，不负责常驻提供服务。
-  # 主要用途：
-  # 1. 执行 node dist/index.js <command>
-  # 2. 进入同一运行环境做调试
-  # 3. 在 gateway 已存在时复用其配置与网络栈
-  #
-  # 如果只是执行 OpenClaw 命令，优先用：
-  #   docker compose exec openclaw-gateway node dist/index.js <command>
-  # 只有在需要独立 CLI 容器时才使用 openclaw-cli。
   openclaw-cli:
     # 镜像与 gateway 保持一致，避免“CLI 和 gateway 版本不一致”。
     image: ${OPENCLAW_IMAGE:-openclaw:host-admin}
@@ -117,10 +97,6 @@ services:
     environment:
       HOME: /root
       TERM: xterm-256color
-      HTTP_PROXY: ${HTTP_PROXY:-http://mihomo:7890}
-      HTTPS_PROXY: ${HTTPS_PROXY:-http://mihomo:7890}
-      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
-      NODE_OPTIONS: --dns-result-order=ipv4first --use-env-proxy
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
       OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
       # 防止某些命令尝试在容器内拉起浏览器。

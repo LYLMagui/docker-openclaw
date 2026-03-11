@@ -30,9 +30,9 @@ docker compose up -d --build openclaw-gateway
 运行时代理已固定为：
 
 ```text
-HTTP_PROXY=http://mihomo:7890
-HTTPS_PROXY=http://mihomo:7890
-NO_PROXY=localhost,127.0.0.1,mihomo
+HTTP_PROXY=http://127.0.0.1:7890
+HTTPS_PROXY=http://127.0.0.1:7890
+NO_PROXY=localhost,127.0.0.1
 ```
 
 其中 `openclaw-cli` 通过 `network_mode: "service:openclaw-gateway"` 共享网关容器的网络命名空间，因此可以直接访问 `127.0.0.1:18789`。
@@ -55,6 +55,7 @@ docker compose up -d --force-recreate openclaw-gateway
 ```
 
 #### 容器运行后openclaw的初始化配置
+
 ```bash
 docker compose run --rm openclaw-cli config
 ```
@@ -98,3 +99,4 @@ docker compose exec openclaw-gateway node dist/index.js devices list
 docker compose exec openclaw-gateway node dist/index.js devices approve <request-id>
 ```
 
+[discord连接问题](./channels/discord.md)
