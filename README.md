@@ -2,6 +2,8 @@
 
 高权限 Docker 版 OpenClaw 的部署方案。
 
+openclaw 部署在服务器，想用来维护服务器，但是官方的 docker 部署权限太低了，因此自己重写一个高权限版的 docker compose也方便后续迁移
+
 ### 1. 准备环境变量 `.env`
 
 ```bash
