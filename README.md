@@ -26,15 +26,7 @@ bash scripts/pull-openclaw.sh
 ### 3. 启动openclaw容器
 
 ```bash
-docker compose up -d --build openclaw-gateway
-```
-
-运行时代理已固定为：
-
-```text
-HTTP_PROXY=http://127.0.0.1:7890
-HTTPS_PROXY=http://127.0.0.1:7890
-NO_PROXY=localhost,127.0.0.1
+docker compose up -d --build
 ```
 
 其中 `openclaw-cli` 通过 `network_mode: "service:openclaw-gateway"` 共享网关容器的网络命名空间，因此可以直接访问 `127.0.0.1:18789`。
@@ -44,6 +36,7 @@ NO_PROXY=localhost,127.0.0.1
 ```bash
 docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.mode local
 docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.bind lan
+# 限制ui访问ip为本机
 docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.controlUi.allowedOrigins '["http://127.0.0.1:18789"]' --strict-json
 docker compose run --rm --no-deps --entrypoint node openclaw-gateway dist/index.js config set gateway.auth.token "$OPENCLAW_GATEWAY_TOKEN"
 ```
@@ -65,7 +58,7 @@ docker compose run --rm openclaw-cli config
 ### 6. 查看日志：
 
 ```bash
-docker compose logs --tail=50 openclaw-gateway
+docker compose logs  --tail=50 openclaw-gateway
 ```
 
 远程访问建议使用 SSH 隧道：
