@@ -1,36 +1,73 @@
 services:
   openclaw-gateway:
+    # 镜像名允许从 .env 覆盖；默认使用本仓库构建后的 openclaw:host-admin。
     image: ${OPENCLAW_IMAGE:-openclaw:host-admin}
+    # 显式容器名
+    container_name: openclaw-gateway
     build:
+      # OpenClaw 源码由 scripts/pull-openclaw.sh 拉到 ./openclaw。
       context: ./openclaw
       dockerfile: Dockerfile
       args:
-        HTTP_PROXY: ${HTTP_PROXY:-}
-        HTTPS_PROXY: ${HTTPS_PROXY:-}
-        ALL_PROXY: ${ALL_PROXY:-}
-        NO_PROXY: ${NO_PROXY:-}
+        # 构建期间的代理设置（视情况使用）
+        HTTP_PROXY: ${HTTP_PROXY:-http://mihomo:7890}
+        HTTPS_PROXY: ${HTTPS_PROXY:-http://mihomo:7890}
+        # 不走代理的地址列表。
+        # localhost / 127.0.0.1 必须直连，否则：
+        NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+        # 构建时可选安装额外 apt 包；默认留空。
         OPENCLAW_DOCKER_APT_PACKAGES: ${OPENCLAW_DOCKER_APT_PACKAGES:-}
+        # 构建时可选启用 OpenClaw 扩展；默认留空。
         OPENCLAW_EXTENSIONS: ${OPENCLAW_EXTENSIONS:-}
+        # 构建镜像时安装 Docker CLI，让容器直接操作宿主机 Docker。
         OPENCLAW_INSTALL_DOCKER_CLI: "1"
+    # 使用 UID=0/GID=0，即 root:root 运行进程。
     user: "0:0"
+    # privileged=true 会给予容器极高权限。
+    # 再配合 /:/host 和 docker.sock，基本接近宿主机管理员能力。
     privileged: true
     environment:
+      # 将 HOME 固定为 /root，保证 OpenClaw、Node、CLI 工具统一使用 /root 下的路径。
+      # 例如 OpenClaw 的配置目录就是 /root/.openclaw。
       HOME: /root
+      # 终端类型，仅影响彩色输出、交互行为和某些 CLI 的展示效果。
       TERM: xterm-256color
+      # 运行期间的代理配置
+      HTTP_PROXY: ${HTTP_PROXY:-http://mihomo:7890}
+      HTTPS_PROXY: ${HTTPS_PROXY:-http://mihomo:7890}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      # --dns-result-order=ipv4first：在云服务器环境优先用 IPv4，减少 IPv6 解析后连接超时的问题。
+      # --use-env-proxy：明确要求 Node 内建 fetch / undici 读取 HTTP_PROXY / HTTPS_PROXY / NO_PROXY
+      # 没有这一项时，很多“明明配置了代理但 fetch 不走代理”的问题都会出现。 
+      NODE_OPTIONS: --dns-result-order=ipv4first --use-env-proxy
+      # Gateway 鉴权令牌。
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
+      # 允许非 loopback 私网地址使用明文 ws:// 的开关。
+      # 默认留空关闭，只有在你明确接受该风险并知道自己在做什么时才临时打开。
       OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
+      # 下列几项是可选的上游登录态/会话态透传。
+      # 不配置则为空，不影响基础 gateway 启动。
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
     volumes:
       - /home/workspace/openclaw:/root/.openclaw
+      # 将宿主机根目录映射到 /host，容器内可直接访问宿主机文件系统。
       - /:/host
+      # 映射宿主机 Docker Socket，容器可直接操作宿主机 Docker。
       - /var/run/docker.sock:/var/run/docker.sock
     ports:
+      # 只绑定到宿主机 127.0.0.1，避免直接暴露到公网。
       - "127.0.0.1:${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      # Bridge/UI 相关的第二个本地端口，同样只绑定回环地址。
       - "127.0.0.1:${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+    # 让容器拥有最小 init 进程，改善僵尸进程回收与信号处理。
     init: true
-    restart: unless-stopped
+    # 常驻服务，异常退出后自动重启。
+    restart: always
+    # 以 gateway 模式启动 OpenClaw。
+    # --bind lan：允许通过 Docker 桥接网络和端口映射访问，而不只是容器内部 loopback。
+    # --port 18789：明确固定网关监听端口，配合上面的端口映射和 healthcheck。
     command:
       [
         "node",
@@ -42,6 +79,8 @@ services:
         "18789",
       ]
     healthcheck:
+      # 健康检查直接在容器内请求 http://127.0.0.1:18789/healthz：不依赖外部网络，也不应该走代理。
+      # 如果这里失败，说明网关进程本身没有正常监听，而不是外部网络访问有问题。
       test:
         [
           "CMD",
@@ -54,27 +93,53 @@ services:
       retries: 5
       start_period: 20s
 
+  # ---------------------------------------------------------------------------
+  # openclaw-cli
+  # ---------------------------------------------------------------------------
+  # 这是交互式/一次性 CLI 容器，不负责常驻提供服务。
+  # 主要用途：
+  # 1. 执行 node dist/index.js <command>
+  # 2. 进入同一运行环境做调试
+  # 3. 在 gateway 已存在时复用其配置与网络栈
+  #
+  # 如果只是执行 OpenClaw 命令，优先用：
+  #   docker compose exec openclaw-gateway node dist/index.js <command>
+  # 只有在需要独立 CLI 容器时才使用 openclaw-cli。
   openclaw-cli:
+    # 镜像与 gateway 保持一致，避免“CLI 和 gateway 版本不一致”。
     image: ${OPENCLAW_IMAGE:-openclaw:host-admin}
+    # 显式容器名，便于直接 exec / inspect。
+    container_name: openclaw-cli
     user: "0:0"
     privileged: true
+    # 关键配置：共享 openclaw-gateway 的网络命名空间。
     network_mode: "service:openclaw-gateway"
     environment:
       HOME: /root
       TERM: xterm-256color
+      HTTP_PROXY: ${HTTP_PROXY:-http://mihomo:7890}
+      HTTPS_PROXY: ${HTTPS_PROXY:-http://mihomo:7890}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      NODE_OPTIONS: --dns-result-order=ipv4first --use-env-proxy
       OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN:?Set OPENCLAW_GATEWAY_TOKEN in .env}
       OPENCLAW_ALLOW_INSECURE_PRIVATE_WS: ${OPENCLAW_ALLOW_INSECURE_PRIVATE_WS:-}
+      # 防止某些命令尝试在容器内拉起浏览器。
       BROWSER: echo
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
     volumes:
+      # 与 gateway 共享完全相同的持久化目录和宿主机挂载，这样 CLI 修改配置后，gateway 可以立即读取同一份数据。
       - /home/workspace/openclaw:/root/.openclaw
       - /:/host
       - /var/run/docker.sock:/var/run/docker.sock
+    # 保持 STDIN 打开，支持交互式命令。
     stdin_open: true
+    # 分配 TTY，便于运行交互式 CLI。
     tty: true
     init: true
+    # 直接把入口指到 OpenClaw CLI，具体子命令由 docker compose run/exec 追加。
     entrypoint: ["node", "dist/index.js"]
+    # 语义上依赖 gateway 先启动；注意这不等于 gateway 一定“健康”后才可用。
     depends_on:
       - openclaw-gateway
