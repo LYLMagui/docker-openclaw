@@ -15,8 +15,8 @@ services:
         # 不走代理的地址列表。
         # localhost / 127.0.0.1 必须直连，否则：
         NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
-        # 构建时可选安装额外 apt 包；默认留空。
-        OPENCLAW_DOCKER_APT_PACKAGES: ${OPENCLAW_DOCKER_APT_PACKAGES:-}
+        # 构建时安装 Python 3.11 运行环境；Node/npm 由镜像内的 Node 22 LTS 提供。
+        OPENCLAW_DOCKER_APT_PACKAGES: ${OPENCLAW_DOCKER_APT_PACKAGES:-python3.11 python3-pip python3.11-venv}
         # 构建时可选启用 OpenClaw 扩展；默认留空。
         OPENCLAW_EXTENSIONS: ${OPENCLAW_EXTENSIONS:-}
         # 构建镜像时安装 Docker CLI，让容器直接操作宿主机 Docker。
@@ -42,6 +42,14 @@ services:
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
+      # 运行期间的代理配置
+      HTTP_PROXY: ${HTTP_PROXY:-http://127.0.0.1:7890}
+      HTTPS_PROXY: ${HTTPS_PROXY:-http://127.0.0.1:7890}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      # --dns-result-order=ipv4first：在云服务器环境优先用 IPv4，减少 IPv6 解析后连接超时的问题。
+      # --use-env-proxy：明确要求 Node 内建 fetch / undici 读取 HTTP_PROXY / HTTPS_PROXY / NO_PROXY
+      # 这一项必须配置，否则 Node 默认不会走代理，会导致 fetch失败
+      NODE_OPTIONS: --dns-result-order=ipv4first --use-env-proxy
     volumes:
       - /home/workspace/openclaw:/root/.openclaw
       # 将宿主机根目录映射到 /host，容器内可直接访问宿主机文件系统。
@@ -104,6 +112,14 @@ services:
       CLAUDE_AI_SESSION_KEY: ${CLAUDE_AI_SESSION_KEY:-}
       CLAUDE_WEB_SESSION_KEY: ${CLAUDE_WEB_SESSION_KEY:-}
       CLAUDE_WEB_COOKIE: ${CLAUDE_WEB_COOKIE:-}
+      # 运行期间的代理配置
+      HTTP_PROXY: ${HTTP_PROXY:-http://127.0.0.1:7890}
+      HTTPS_PROXY: ${HTTPS_PROXY:-http://127.0.0.1:7890}
+      NO_PROXY: ${NO_PROXY:-localhost,127.0.0.1}
+      # --dns-result-order=ipv4first：在云服务器环境优先用 IPv4，减少 IPv6 解析后连接超时的问题。
+      # --use-env-proxy：明确要求 Node 内建 fetch / undici 读取 HTTP_PROXY / HTTPS_PROXY / NO_PROXY
+      # 这一项必须配置，否则 Node 默认不会走代理，会导致 fetch失败
+      NODE_OPTIONS: --dns-result-order=ipv4first --use-env-proxy
     volumes:
       # 与 gateway 共享完全相同的持久化目录和宿主机挂载，这样 CLI 修改配置后，gateway 可以立即读取同一份数据。
       - /home/workspace/openclaw:/root/.openclaw
